@@ -214,7 +214,7 @@ resource "aws_security_group" "cwc_private_sg" {
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
-    cidr_blocks     = ["10.0.0.0/25"]
+    cidr_blocks     = ["0.0.0.0/0"]
   }
 
   egress {
@@ -241,6 +241,8 @@ resource "aws_instance" "private_instance" {
   # key_name = aws_key_pair.key.key_name
 
   vpc_security_group_ids = [aws_security_group.cwc_private_sg.id]
+
+  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
 
   tags = {
     Name = "${var.app_name}-private-ec2-${count.index + 1}"
@@ -287,3 +289,31 @@ resource "aws_instance" "private_instance" {
 #     Name = "cwc-bastion-host-ec2"
 #   }
 # }
+
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.app_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version   = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "",
+        Effect    = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "${var.app_name}-ec2-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}
