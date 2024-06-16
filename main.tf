@@ -57,30 +57,6 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_private" {
   ip_protocol       = "-1"
 }
 
-# resource "aws_security_group" "cwc_private_sg" {
-#   name        = "cwc_private_sg"
-#   description = "TCP inbound traffic from public subnet, and all outbound traffic"
-#   vpc_id      = module.vpc.vpc_id
-
-#   ingress {
-#     from_port       = 80
-#     to_port         = 80
-#     protocol        = "tcp"
-#     security_groups = [aws_security_group.lb_sg.id]
-#   }
-
-#   egress {
-#     from_port       = 0
-#     to_port         = 0
-#     protocol        = "-1"
-#     cidr_blocks     = ["0.0.0.0/0"]
-#   }
-
-#   tags = {
-#     Name = "cwc_private_sg"
-#   }
-# }
-
 resource "aws_instance" "private_instance" {
   count         = 2
   ami           = "ami-0d3a2960fcac852bc"
@@ -93,6 +69,8 @@ resource "aws_instance" "private_instance" {
   vpc_security_group_ids = [aws_security_group.private_sg.id]
 
   iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+
+  user_data = file("./docker-script.sh")
 
   tags = {
     Name = "${var.app_name}-private-ec2-${count.index + 1}"
@@ -117,9 +95,14 @@ resource "aws_iam_role" "ec2_role" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_policy_attachment" {
+resource "aws_iam_role_policy_attachment" "ssm_policy_attachment" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_read_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_instance_profile" "ec2_instance_profile" {
@@ -182,4 +165,8 @@ resource "aws_lb_listener" "listener" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.target_group.arn
   }
+}
+
+resource "aws_ecr_repository" "ecr" {
+  name = "${var.app_name}-ecr"
 }
