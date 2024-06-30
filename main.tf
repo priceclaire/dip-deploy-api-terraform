@@ -197,7 +197,7 @@ resource "aws_db_subnet_group" "db_subnet_group" {
 resource "aws_db_instance" "postgres" {
   allocated_storage   = 10
   engine              = "postgres"
-  instance_class      = "db.t2.micro"
+  instance_class      = "db.t3.micro"
   username            = "postgres"
   password            = "postgres"
   skip_final_snapshot = true
