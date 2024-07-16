@@ -26,182 +26,81 @@ provider "aws" {
 module "vpc" {
   source = "./vpc"
 
-  region                = var.region
   cidr_block            = var.cidr_block
   public_subnet_cidrs   = var.public_subnet_cidrs
   private_subnet_cidrs  = var.private_subnet_cidrs
   app_name              = var.app_name
 }
 
-resource "aws_security_group" "private_sg" {
-  name        = "${var.app_name}-private-sg"
-  description = "Private security group"
-  vpc_id      = module.vpc.vpc_id
+module "iam" {
+  source = "./iam"
 
-  tags = {
-    Name = "${var.app_name}-private-sg"
-  }
+  app_name = var.app_name
 }
 
-resource "aws_vpc_security_group_ingress_rule" "allow_tcp_traffic_from_lb" {
-  security_group_id             = aws_security_group.private_sg.id
-  from_port                     = 3000
-  to_port                       = 3000
-  ip_protocol                   = "tcp"
-  referenced_security_group_id  = aws_security_group.lb_sg.id
+module "ecr_frontend" {
+  source = "./ecr"
+
+  app_name  = var.app_name
+  tier      = "frontend"
 }
 
-resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_private" {
-  security_group_id = aws_security_group.private_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
+module "ecr_api" {
+  source = "./ecr"
+
+  app_name  = var.app_name
+  tier      = "api"
 }
 
-resource "aws_instance" "private_instance" {
-  count         = 2
-  ami           = "ami-0d3a2960fcac852bc"
-  instance_type = "t3.micro"
+module "bastion" {
+  source = "./bastion"
 
-  subnet_id   = module.vpc.private_subnet_ids[count.index]  
-
-  associate_public_ip_address = false
-
-  vpc_security_group_ids = [aws_security_group.private_sg.id]
-
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
-
-  user_data = file("./docker-script.sh")
-
-  tags = {
-    Name = "${var.app_name}-private-ec2-${count.index + 1}"
-  }
-}
-
-resource "aws_iam_role" "ec2_role" {
-  name = "${var.app_name}-ec2-role"
-
-  assume_role_policy = jsonencode({
-    Version   = "2012-10-17",
-    Statement = [
-      {
-        Sid       = "",
-        Effect    = "Allow",
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ssm_policy_attachment" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_role_policy_attachment" "ecr_read_policy_attachment" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-resource "aws_iam_instance_profile" "ec2_instance_profile" {
-  name = "${var.app_name}-ec2-instance-profile"
-  role = aws_iam_role.ec2_role.name
-}
-
-resource "aws_security_group" "lb_sg" {
-  name        = "${var.app_name}-lb-sg"
-  description = "Load balancer security group"
-  vpc_id      = module.vpc.vpc_id
-
-  tags = {
-    Name = "${var.app_name}-lb-sg"
-  }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "allow_tcp_traffic" {
-  security_group_id = aws_security_group.lb_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  from_port         = 80
-  to_port           = 80
-  ip_protocol       = "tcp"
-}
-
-resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_lb" {
-  security_group_id = aws_security_group.lb_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-}
-
-resource "aws_lb" "load_balancer" {
-  name              = "${var.app_name}-load-balancer"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.lb_sg.id]
-  subnets            = module.vpc.public_subnet_ids
-} 
-
-resource "aws_lb_target_group" "target_group" {
-  name     = "${var.app_name}-target-group"
-  port     = 3000
-  protocol = "HTTP"
+  app_name = var.app_name
   vpc_id   = module.vpc.vpc_id
+  subnet_id = module.vpc.private_subnet_ids[0]
+  ec2_profile_name = module.iam.ec2_profile_name
 }
 
-resource "aws_lb_target_group_attachment" "target_group_attachment" {
-  count             = 2
-  target_group_arn  = aws_lb_target_group.target_group.arn
-  target_id         = aws_instance.private_instance[count.index].id
-  port              = 3000
+module "rds" {
+  source = "./rds"
+
+  app_name            = var.app_name
+
+  private_sg_id       = module.private_ec2.security_group_id
+  bastion_sg_id       = module.bastion.security_group_id
+
+  vpc_id              = module.vpc.vpc_id
+  private_subnet_ids  = module.vpc.private_subnet_ids
+
+  db_username         = var.db_username
+  db_password         = var.db_password
 }
 
-resource "aws_lb_listener" "listener" {
-  load_balancer_arn = aws_lb.load_balancer.arn
-  port              = "80"
-  protocol          = "HTTP"
+module "private_ec2" {
+  source = "./private_ec2"
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.target_group.arn
-  }
+  app_name            = var.app_name
+
+  vpc_id              = module.vpc.vpc_id
+  private_subnet_ids  = module.vpc.private_subnet_ids
+
+  lb_sg_id            = module.alb.lb_sg_id
+
+  ec2_profile_name    = module.iam.ec2_profile_name
 }
 
-resource "aws_ecr_repository" "ecr" {
-  name = "${var.app_name}-ecr"
+module "alb" {
+  source = "./alb"
+
+  app_name            = var.app_name
+
+  vpc_id              = module.vpc.vpc_id
+  public_subnet_ids   = module.vpc.public_subnet_ids
+  instance_ids        = module.private_ec2.instance_ids
 }
 
-resource "aws_security_group" "db_sg" {
-  name        = "${var.app_name}-db-sg"
-  description = "Database security group"
-  vpc_id      = module.vpc.vpc_id
 
-  tags = {
-    Name = "${var.app_name}-db-sg"
-  }
-}
 
-resource "aws_vpc_security_group_ingress_rule" "allow_tcp_traffic_db" {
-  security_group_id             = aws_security_group.db_sg.id
-  from_port                     = 5432
-  to_port                       = 5432
-  ip_protocol                   = "tcp"
-  referenced_security_group_id  = aws_security_group.private_sg.id
-}
 
-resource "aws_db_subnet_group" "db_subnet_group" {
-  name       = "${var.app_name}-db-subnet-group"
-  subnet_ids = module.vpc.private_subnet_ids
-}
 
-resource "aws_db_instance" "postgres" {
-  allocated_storage   = 10
-  engine              = "postgres"
-  instance_class      = "db.t3.micro"
-  username            = "postgres"
-  password            = "postgres"
-  skip_final_snapshot = true
 
-  db_subnet_group_name = aws_db_subnet_group.db_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.db_sg.id]  
-}

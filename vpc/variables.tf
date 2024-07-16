@@ -1,8 +1,3 @@
-variable "region" {
-    type        = string
-    description = "The region where we are creating the VPC"
-}
-
 variable "cidr_block" {
   type          = string
   description   = "value of cidr block"

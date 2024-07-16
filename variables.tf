@@ -27,3 +27,15 @@ variable "app_name" {
   description = "value of app name"
   default     = "cwc"
 }
+
+variable "db_username" {
+  type        = string
+  description = "value of db username"
+  sensitive   = true
+}
+
+variable "db_password" {
+  type        = string
+  description = "value of db username"
+  sensitive   = true
+}
