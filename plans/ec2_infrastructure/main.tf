@@ -24,7 +24,7 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "./vpc"
+  source = "../../modules/vpc"
 
   cidr_block            = var.cidr_block
   public_subnet_cidrs   = var.public_subnet_cidrs
@@ -33,27 +33,27 @@ module "vpc" {
 }
 
 module "iam" {
-  source = "./iam"
+  source = "../../modules/iam"
 
   app_name = var.app_name
 }
 
 module "ecr_frontend" {
-  source = "./ecr"
+  source = "../../modules/ecr"
 
   app_name  = var.app_name
   tier      = "frontend"
 }
 
 module "ecr_api" {
-  source = "./ecr"
+  source = "../../modules/ecr"
 
   app_name  = var.app_name
   tier      = "api"
 }
 
 module "bastion" {
-  source = "./bastion"
+  source = "../../modules/bastion"
 
   app_name = var.app_name
   vpc_id   = module.vpc.vpc_id
@@ -62,7 +62,7 @@ module "bastion" {
 }
 
 module "rds" {
-  source = "./rds"
+  source = "../../modules/rds"
 
   app_name            = var.app_name
 
@@ -77,7 +77,7 @@ module "rds" {
 }
 
 module "private_ec2" {
-  source = "./private_ec2"
+  source = "../../modules/private_ec2"
 
   app_name            = var.app_name
 
@@ -90,7 +90,7 @@ module "private_ec2" {
 }
 
 module "alb" {
-  source = "./alb"
+  source = "../../modules/alb"
 
   app_name            = var.app_name
 
